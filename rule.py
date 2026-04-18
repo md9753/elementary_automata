@@ -1,40 +1,41 @@
 from random import choices
-from sys import argv
 from subprocess import run
-from time import sleep
+from time import sleep, time
 import argparse
-
-
-parser = argparse.ArgumentParser()
-parser.add_argument('rule', nargs=1, help="automata rule in wolfram notation", type=int)
-parser.add_argument('--init_row', '-i', choices=["?", "l", "m", "r"],
-                    help="define initial row")
-args = parser.parse_args()
-
-
-height, width = [ int(i) for i in run(["stty", "size"],
-                                      capture_output=True,text=True)
-                                      .stdout.strip().split(' ') ]
-
 
 def int_to_bits(num, length=8):
     num = int(num)
-    bits = list(f"{num:0>{length}b}".format(num))
+    bits = bin(num)[2:].zfill(length)
     return [ int(i) for i in bits ]
 
 
 patterns = [ int_to_bits(i, 3) for i in reversed(range(8)) ]
-def genericrule(rulenum, a,b,c):
+def generate_rule(rulenum):
     rule = int_to_bits(rulenum)
-    return rule[patterns.index([a,b,c])]
-
-
-def next(prev):
-    return [ genericrule(argv[1], prev[i-1], prev[i], prev[(i+1) % len(prev)])
-        for i in range(len(prev)) ]
+    def specific_rule(a,b,c):
+        return rule[patterns.index([a,b,c])]
+    def next(prev_list):
+        return [ specific_rule(
+                               prev_list[i-1],
+                               prev_list[i],
+                               prev_list[(i+1) % len(prev_list)]
+                              )
+                for i in range(len(prev_list))
+                ]
+    return next
 
 
 def init(row_size = 2000):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('rule', help="automata rule in wolfram notation", type=int)
+    parser.add_argument('--init_row', '-i', choices=["?", "l", "m", "r"],
+                        help="define initial row")
+    args = parser.parse_args()
+
+
+    height, width = [ int(i) for i in run(["stty", "size"],
+                                          capture_output=True,text=True)
+                                          .stdout.strip().split(' ') ]
     padding = [ 0 for _ in range(row_size//2) ]
     if args.init_row == "?":
         row = choices((0,1), k=row_size)
@@ -54,15 +55,19 @@ def init(row_size = 2000):
         upper = min(len(row)//2 + width//2, len(row))
         lower = max(len(row)//2 - width//2, 0)
                         
-    return row, upper, lower
+    return row, upper, lower, args.rule
 
 
-def main(wait=.0333333333):
-    row, upper, lower = init()
+def main(wait=.0333333333333):
+    row, upper, lower, rulenum = init()
+    next = generate_rule(rulenum)
     while True:
+        start = time()
         print("".join("\033[34m█\033[00m" if i else " " for i in row[lower:upper]))
         row = next(row)
-        sleep(float(wait))
+        attempt_framerate = wait - (time()-start)
+        if attempt_framerate > 0:
+            sleep(attempt_framerate)
 
 
 if __name__ == '__main__':
